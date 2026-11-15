@@ -1,4 +1,4 @@
-name: Build APK
+name: Build App
 
 on:
   push:
@@ -7,35 +7,36 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      # Your real AdMob IDs (Settings > Secrets and variables > Actions > Variables)
+      ADMOB_APP_ID: ${{ vars.ADMOB_APP_ID }}
+      ADMOB_BANNER_ID: ${{ vars.ADMOB_BANNER_ID }}
+      ADMOB_INTERSTITIAL_ID: ${{ vars.ADMOB_INTERSTITIAL_ID }}
+      # Your signing key password (Settings > Secrets and variables > Actions > Secrets)
+      KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
     steps:
       - name: Get the files
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
-      - name: Unzip the project
-        run: for f in *.zip; do unzip -o "$f"; done
-
-      - name: Use a faster download mirror
+      - name: Unzip the newest project zip
         run: |
-          cat > TambolaNumberAnnouncer/settings.gradle.kts <<'EOF'
-          pluginManagement {
-              repositories {
-                  maven("https://maven-central.storage-download.googleapis.com/maven2/")
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  maven("https://maven-central.storage-download.googleapis.com/maven2/")
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "TambolaNumberAnnouncer"
-          include(":app")
-          EOF
+          latest=$(for f in *.zip; do echo "$(git log -1 --format=%ct -- "$f") $f"; done | sort -n | tail -1 | cut -d' ' -f2-)
+          echo "Using: $latest"
+          unzip -o "$latest"
+
+      - name: Prepare signing key
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | tr -d ' \r\n' | base64 -d > "$RUNNER_TEMP/upload.jks"
+            echo "KEYSTORE_FILE=$RUNNER_TEMP/upload.jks" >> "$GITHUB_ENV"
+            echo "Signing key found."
+          else
+            echo "No signing key secret yet - Play Store file will NOT be signed."
+          fi
 
       - name: Set up Java 17
         uses: actions/setup-java@v4
@@ -46,14 +47,26 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: "8.13"
 
-      - name: Build the APK
+      - name: Build the app
         working-directory: TambolaNumberAnnouncer
-        run: gradle assembleDebug --no-daemon
+        run: gradle assembleDebug assembleRelease bundleRelease --no-daemon
 
-      - name: Save the APK
+      - name: Save test APK (test ads)
         uses: actions/upload-artifact@v4
         with:
-          name: Tambola-APK
-          path: TambolaNumberAnnouncer/app/build/outputs/apk/debug/app-debug.apk
+          name: 1-Test-APK
+          path: TambolaNumberAnnouncer/app/build/outputs/apk/debug/*.apk
+
+      - name: Save release APK (real ads, install to check)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 2-Release-APK
+          path: TambolaNumberAnnouncer/app/build/outputs/apk/release/*.apk
+
+      - name: Save Play Store file (AAB)
+        uses: actions/upload-artifact@v4
+        with:
+          name: 3-PlayStore-AAB
+          path: TambolaNumberAnnouncer/app/build/outputs/bundle/release/*.aab
