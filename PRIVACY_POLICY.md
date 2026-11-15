@@ -30,4 +30,4 @@ The app is not directed at children under 13 and does not knowingly collect pers
 This policy may be updated from time to time. Changes will be posted on this page.
 
 ## Contact
-For any questions about this policy, email: **YOUR-EMAIL-HERE**
+For any questions about this policy, email: itzsids@gmail.com
